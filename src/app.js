@@ -75,6 +75,7 @@ const state = {
   reportText: '',
   reportRows: [],
   exportBusy: false,
+  backupBusy: false,
   ai: {
     provider: 'openai-compatible',
     baseUrl: DEFAULT_AI_BASE_URL,
@@ -1424,9 +1425,51 @@ function openExportDialog() {
 }
 
 async function backupData() {
-  const backup = await createBackup();
-  downloadFile(JSON.stringify(backup), `worklog-ai-backup-${toLocalDate()}.json`, 'application/json');
-  showToast('Резервная копия создана');
+  if (state.backupBusy) return;
+  state.backupBusy = true;
+  try {
+    showToast('Готовим резервную копию…');
+    const backup = await createBackup();
+    const filename = `worklog-ai-backup-${toLocalDate()}.json`;
+    await deliverReportFile({
+      blob: new Blob([JSON.stringify(backup)], { type: 'application/json;charset=utf-8' }),
+      filename,
+      title: `Резервная копия WorkLog AI ${formatDate(toLocalDate())}`,
+      filesystem: nativePlugin('Filesystem'),
+      share: nativePlugin('Share'),
+      browserDownload: downloadFile,
+      directoryName: 'worklog-backups',
+    });
+    showToast('Резервная копия создана');
+  } finally {
+    state.backupBusy = false;
+  }
+}
+
+function decodeBase64Utf8(value) {
+  const bytes = Uint8Array.from(atob(String(value ?? '')), (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+async function restoreBackupFromText(text) {
+  if (!confirm('Импорт заменит текущие локальные данные. Продолжить?')) return;
+  const backup = JSON.parse(text);
+  await restoreBackup(backup);
+  showToast('Резервная копия восстановлена');
+  setTimeout(() => location.reload(), 600);
+}
+
+async function chooseBackupFile() {
+  const filePicker = nativePlugin('FilePicker');
+  if (!filePicker) {
+    document.querySelector('#backup-file')?.click();
+    return;
+  }
+  const result = await filePicker.pickFiles({ limit: 1, readData: true });
+  const file = result.files?.[0];
+  if (!file) return;
+  if (!file.data) throw new Error('Не удалось прочитать выбранный файл резервной копии.');
+  await restoreBackupFromText(decodeBase64Utf8(file.data));
 }
 
 async function beginToday() {
@@ -1553,7 +1596,7 @@ async function handleAction(button) {
   if (action === 'export-xlsx') return exportReport('xlsx');
   if (action === 'export-pdf') return exportReport('pdf');
   if (action === 'backup-data') return backupData();
-  if (action === 'choose-backup') document.querySelector('#backup-file')?.click();
+  if (action === 'choose-backup') return chooseBackupFile();
   if (action === 'clear-ai-key') {
     state.ai.apiKey = '';
     await saveAiConfig();
@@ -1851,11 +1894,7 @@ document.querySelector('#backup-file')?.addEventListener('change', async (event)
   const file = event.target.files[0];
   if (!file) return;
   try {
-    if (!confirm('Импорт заменит текущие локальные данные. Продолжить?')) return;
-    const backup = JSON.parse(await file.text());
-    await restoreBackup(backup);
-    showToast('Резервная копия восстановлена');
-    setTimeout(() => location.reload(), 600);
+    await restoreBackupFromText(await file.text());
   } catch (error) {
     showToast(error.message || 'Не удалось импортировать резервную копию.', 'error');
   } finally {

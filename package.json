@@ -1,6 +1,6 @@
 {
   "name": "worklog-ai",
-  "version": "0.6.16",
+  "version": "0.6.17",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,6 +15,7 @@
     "@capacitor/camera": "^7.0.5",
     "@capacitor/core": "^7.4.3",
     "@capacitor/filesystem": "^7.1.8",
+    "@capawesome/capacitor-file-picker": "^7.2.0",
     "@capacitor/local-notifications": "^7.0.7",
     "@capacitor/share": "^7.0.4",
     "exceljs": "^4.4.0",

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import 'fake-indexeddb/auto';
 
 import { requestToPromise, resetDatabaseForTests, runTransaction } from '../src/data/indexeddb/database.js';
-import { taskRepository, workDayRepository, workEntryRepository } from '../src/data/repositories.js';
+import { createBackup, restoreBackup, settingsRepository, taskRepository, workDayRepository, workEntryRepository } from '../src/data/repositories.js';
 
 async function reset() {
   await resetDatabaseForTests();
@@ -177,4 +177,20 @@ test('deleting a task cascades entries, revisions, attachments and invalidates i
   const day = await workDayRepository.get('2026-07-14');
   assert.notEqual(day.state, 'finished');
   assert.deepEqual(day.allocations, []);
+});
+
+test('a backup excludes the AI key and restores stored records', async () => {
+  await reset();
+  const task = await createTask();
+  const entry = await createEntry(task, '2026-07-15');
+  await settingsRepository.set('aiConfig', { apiKey: 'secret-key', model: 'openai/gpt-5.4-mini' });
+
+  const backup = await createBackup();
+  assert.equal(backup.stores.settings.find((setting) => setting.key === 'aiConfig').value.apiKey, undefined);
+  await reset();
+  await restoreBackup(backup);
+
+  assert.equal((await taskRepository.get(task.id)).title, task.title);
+  assert.equal((await workEntryRepository.get(entry.id)).note, entry.note);
+  assert.equal((await settingsRepository.get('aiConfig')).apiKey, undefined);
 });

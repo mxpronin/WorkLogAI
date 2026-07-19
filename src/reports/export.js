@@ -327,12 +327,13 @@ export async function deliverReportFile({
   filesystem,
   share,
   browserDownload,
+  directoryName = 'worklog-exports',
 }) {
   if (!filesystem || !share) {
     browserDownload(blob, filename, blob.type);
     return { shared: false };
   }
-  const exportDirectory = 'worklog-exports';
+  const exportDirectory = directoryName;
   try {
     await filesystem.rmdir({ path: exportDirectory, directory: 'CACHE', recursive: true });
   } catch {
