@@ -40,6 +40,8 @@ const state = {
   selectedTaskId: null,
   selectedDate: toLocalDate(),
   weekStart: startOfWeek(),
+  reportFromDate: toLocalDate(startOfWeek()),
+  reportToDate: toLocalDate(addDays(startOfWeek(), 6)),
   taskFilter: 'active',
   taskSearch: '',
   editingTaskId: null,
@@ -96,6 +98,11 @@ function element(tag, className, text) {
 function setText(selector, text) {
   const node = document.querySelector(selector);
   if (node) node.textContent = text;
+}
+
+function formatReportPeriod(from, to, month = 'long') {
+  const formatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month });
+  return `${formatter.format(from)} — ${formatter.format(to)}`;
 }
 
 function attachmentName(attachment) {
@@ -532,7 +539,7 @@ async function showScreen(route, { updateHistory = false } = {}) {
   try { await renderRoute(route); } catch (error) { showToast(error.message || 'Не удалось загрузить данные.', 'error'); }
 }
 
-function createTaskCard(task, actualMinutes, { compact = false, spprMinutes = 0, swipeActions = true } = {}) {
+function createTaskCard(task, actualMinutes, { compact = false, spprMinutes = 0, listActions = false } = {}) {
   const card = element('button', 'task-card');
   card.type = 'button';
   card.dataset.action = 'open-task';
@@ -542,14 +549,21 @@ function createTaskCard(task, actualMinutes, { compact = false, spprMinutes = 0,
   const times = element('span', compact ? 'inline-times' : 'task-card__times');
   times.append(element('b', '', formatMinutes(actualMinutes)), element('em', '', formatMinutes(spprMinutes)));
   card.append(info, times);
-  if (!swipeActions) return card;
-  const row = element('div', 'task-swipe');
-  row.dataset.taskId = task.id;
-  row.setAttribute('aria-expanded', 'false');
-  const actions = element('div', 'task-swipe__actions');
-  const edit = element('button', 'task-swipe__edit', 'Изменить'); edit.type = 'button'; edit.dataset.action = 'edit-task-swipe'; edit.dataset.taskId = task.id;
-  const remove = element('button', 'task-swipe__delete', 'Удалить'); remove.type = 'button'; remove.dataset.action = 'delete-task-swipe'; remove.dataset.taskId = task.id;
-  actions.append(edit, remove); row.append(actions, card);
+  if (!listActions || task.status === 'completed') return card;
+  const row = element('div', 'task-list-item');
+  const actions = element('div', 'task-card-actions');
+  const actionButton = (action, icon, label, className = '') => {
+    const button = element('button', `icon-button ${className}`.trim());
+    button.type = 'button'; button.dataset.action = action; button.dataset.taskId = task.id; button.setAttribute('aria-label', label);
+    button.innerHTML = `<svg><use href="#${icon}" /></svg>`;
+    return button;
+  };
+  actions.append(
+    actionButton('edit-task-list', 'i-edit', 'Изменить задачу'),
+    actionButton('complete-task-list', 'i-check', 'Завершить задачу', 'icon-button--complete'),
+    actionButton('delete-task-list', 'i-trash', 'Удалить задачу', 'icon-button--delete'),
+  );
+  row.append(card, actions);
   return row;
 }
 
@@ -620,15 +634,19 @@ async function renderCalendar() {
   setText('#calendar-sppr-total-row', formatMinutes(spprTotal));
   const calendarAction = document.querySelector('#calendar-day-action');
   const calendarActionLabel = document.querySelector('#calendar-day-action-label');
+  const calendarAddEntry = document.querySelector('#calendar-add-entry');
   if (!workDay || workDay.state === 'draft' || (workDay.state === 'active' && !workDay.startedAt)) {
     calendarAction.dataset.action = 'start-selected-day';
     calendarActionLabel.textContent = 'Начать день';
+    calendarAddEntry.hidden = true;
   } else if (workDay.state === 'finished') {
     calendarAction.dataset.action = 'open-selected-result';
     calendarActionLabel.textContent = 'Открыть результат';
+    calendarAddEntry.hidden = false;
   } else {
     calendarAction.dataset.action = 'open-end-day';
     calendarActionLabel.textContent = 'Завершить день';
+    calendarAddEntry.hidden = false;
   }
   const strip = document.querySelector('#calendar-week');
   strip.replaceChildren();
@@ -645,7 +663,7 @@ async function renderCalendar() {
   const list = document.querySelector('#calendar-task-list'); list.replaceChildren();
   grouped.forEach((minutes, taskId) => { if (taskMap.has(taskId)) list.append(createTaskCard(taskMap.get(taskId), minutes, { compact: true, spprMinutes: spprByTask.get(taskId) ?? 0 })); });
   renderReminderCountdown();
-  if (!list.children.length) list.append(emptyState('Нет записей за этот день', 'Выберите другой день или добавьте заметку.', 'Добавить запись', 'new-entry'));
+  if (!list.children.length) list.append(emptyState('Нет записей за этот день', 'Записи появятся здесь после добавления.'));
 }
 
 async function renderTasks() {
@@ -668,7 +686,7 @@ async function renderTasks() {
     return matchesFilter && searchable.includes(query);
   });
   const list = document.querySelector('#all-task-list'); list.replaceChildren();
-  filtered.forEach((task) => list.append(createTaskCard(task, totals.get(task.id) ?? 0, { spprMinutes: spprTotals.get(task.id) ?? 0 })));
+  filtered.forEach((task) => list.append(createTaskCard(task, totals.get(task.id) ?? 0, { spprMinutes: spprTotals.get(task.id) ?? 0, listActions: true })));
   if (!filtered.length) list.append(emptyState('Задачи не найдены', query ? 'Измените запрос поиска.' : 'Создайте первую задачу СППР.', query ? null : 'Создать задачу', query ? null : 'new-task'));
 }
 
@@ -691,8 +709,9 @@ async function renderTaskDetail() {
   setText('#task-detail-actual', formatMinutes(history.actualMinutes));
   setText('#task-detail-sppr', formatMinutes(history.spprMinutes));
   const statusAction = document.querySelector('#task-status-action');
-  statusAction.hidden = task.status === 'archived';
+  statusAction.hidden = task.status === 'archived' || task.status === 'completed';
   statusAction.textContent = task.status === 'completed' ? 'Вернуть в активные' : 'Завершить задачу';
+  document.querySelector('[data-screen="task-real"] [data-action="edit-task"]')?.toggleAttribute('hidden', task.status === 'completed');
   const description = document.querySelector('#task-detail-description');
   description.hidden = !task.description;
   description.textContent = task.description || '';
@@ -848,8 +867,10 @@ function updateEntryTypeUi() {
 }
 
 async function renderReports() {
-  const week = Array.from({ length: 7 }, (_, index) => addDays(state.weekStart, index));
-  const weekEnd = week[6]; const fromDate = toLocalDate(week[0]); const toDate = toLocalDate(weekEnd);
+  const fromDate = state.reportFromDate; const toDate = state.reportToDate;
+  const from = parseLocalDate(fromDate); const to = parseLocalDate(toDate);
+  const dates = [];
+  for (let date = from; date <= to; date = addDays(date, 1)) dates.push(date);
   const [tasks, entries, workDays] = await Promise.all([
     taskRepository.list({ includeArchived: true }),
     workEntryRepository.list({ fromDate, toDate }),
@@ -857,33 +878,31 @@ async function renderReports() {
   ]);
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const dayMap = new Map(workDays.map((day) => [day.localDate, day]));
-  setText('#report-period-label', `${new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(state.weekStart)} — ${new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' }).format(weekEnd)}`);
+  const periodLabel = formatReportPeriod(from, to, 'short');
+  setText('#report-period-label', periodLabel);
   setText('#report-actual-total', formatMinutes(sumMinutes(entries)));
-  setText('#report-average', entries.length ? `в среднем ${formatMinutes(Math.round(sumMinutes(entries) / 5))}/день` : 'нет записей');
+  setText('#report-average', entries.length ? `в среднем ${formatMinutes(Math.round(sumMinutes(entries) / dates.length))}/день` : 'нет записей');
   const spprTotal = workDays.reduce((total, day) => total + (day.allocations ?? []).reduce((sum, allocation) => sum + allocation.spprMinutes, 0), 0);
   const spprMetric = document.querySelector('#report-actual-total')?.closest('.metric-grid')?.querySelector('.metric-card--sppr strong');
   if (spprMetric) spprMetric.textContent = formatMinutes(spprTotal);
   const spprCaption = spprMetric?.nextElementSibling;
   if (spprCaption) spprCaption.textContent = workDays.some((day) => day.state === 'finished') ? 'по завершённым дням' : 'ещё не сформировано';
 
-  const bars = document.querySelector('#report-bars');
-  bars.replaceChildren();
-  week.forEach((date) => {
+  const dayList = document.querySelector('#report-day-list');
+  dayList.replaceChildren();
+  dates.forEach((date) => {
     const localDate = toLocalDate(date);
     const actual = entries.filter((entry) => entry.localDate === localDate).reduce((total, entry) => total + entry.actualMinutes, 0);
     const sppr = (dayMap.get(localDate)?.allocations ?? []).reduce((total, allocation) => total + allocation.spprMinutes, 0);
-    const column = element('div');
-    const actualBar = element('i'); actualBar.style.setProperty('--value', `${Math.min(100, actual / 720 * 100)}%`);
-    const spprBar = element('b'); spprBar.style.setProperty('--value', `${Math.min(100, sppr / 720 * 100)}%`);
-    column.append(actualBar, spprBar, element('span', '', new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric' }).format(date)));
-    bars.append(column);
+    const row = element('div', 'report-table__row');
+    row.append(element('span', '', formatDate(localDate, { weekday: 'short', day: 'numeric', month: 'short' })), element('b', '', formatMinutes(actual)), element('em', '', formatMinutes(sppr)));
+    dayList.append(row);
   });
-  bars.style.gridTemplateColumns = `repeat(${week.length}, 1fr)`;
 
   const grouped = entries.reduce((map, entry) => map.set(entry.taskId, (map.get(entry.taskId) ?? 0) + entry.actualMinutes), new Map());
   const list = document.querySelector('#report-task-list'); list.replaceChildren();
-  grouped.forEach((minutes, taskId) => { const task = taskMap.get(taskId); if (!task) return; const card = createTaskCard(task, minutes, { swipeActions: false }); card.className = 'report-task-card'; list.append(card); });
-  if (!list.children.length) list.append(emptyState('За неделю нет данных', 'Добавьте заметки, чтобы увидеть реальную загрузку.'));
+  grouped.forEach((minutes, taskId) => { const task = taskMap.get(taskId); if (!task) return; const card = createTaskCard(task, minutes, { spprMinutes: getTaskSpprTotals(workDays).get(taskId) ?? 0 }); card.className = 'report-task-card'; list.append(card); });
+  if (!list.children.length) list.append(emptyState('За выбранный период нет данных', 'Добавьте заметки, чтобы увидеть реальную загрузку.'));
   setText('#report-task-count', `${grouped.size} ${grouped.size === 1 ? 'задача' : grouped.size > 1 && grouped.size < 5 ? 'задачи' : 'задач'}`);
 }
 
@@ -1153,8 +1172,7 @@ function buildReportText(days, taskMap, entries) {
 }
 
 async function renderSpprReport() {
-  const weekEnd = addDays(state.weekStart, 6);
-  const fromDate = toLocalDate(state.weekStart); const toDate = toLocalDate(weekEnd);
+  const fromDate = state.reportFromDate; const toDate = state.reportToDate;
   const [days, tasks, entries] = await Promise.all([
     workDayRepository.list({ fromDate, toDate }),
     taskRepository.list({ includeArchived: true }),
@@ -1163,7 +1181,7 @@ async function renderSpprReport() {
   const finishedDays = days.filter((day) => day.state === 'finished' && day.allocations?.length);
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const entryMap = new Map(entries.map((entry) => [entry.id, entry]));
-  const period = `${new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(state.weekStart)} — ${new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(weekEnd)}`;
+  const period = formatReportPeriod(parseLocalDate(fromDate), parseLocalDate(toDate));
   setText('#sppr-report-period', period);
   const total = finishedDays.reduce((sum, day) => sum + day.allocations.reduce((daySum, allocation) => daySum + allocation.spprMinutes, 0), 0);
   setText('#sppr-report-total', formatMinutes(total));
@@ -1194,7 +1212,7 @@ async function renderSpprReport() {
     article.append(header, body);
     list.append(article);
   });
-  if (!finishedDays.length) list.append(emptyState('Отчёт пока пуст', 'Завершите хотя бы один день выбранной недели.'));
+  if (!finishedDays.length) list.append(emptyState('Отчёт пока пуст', 'Завершите хотя бы один день выбранного периода.'));
   state.reportText = buildReportText(finishedDays, taskMap, entries);
 }
 
@@ -1520,8 +1538,12 @@ async function handleAction(button) {
   const action = button.dataset.action;
   if (action === 'open-task') { state.selectedTaskId = button.dataset.taskId; return showScreen('task-real', { updateHistory: true }); }
   if (action === 'new-task') { state.editingTaskId = null; return showScreen('task-editor', { updateHistory: true }); }
-  if (action === 'edit-task') { state.editingTaskId = state.selectedTaskId; return showScreen('task-editor', { updateHistory: true }); }
-  if (action === 'edit-task-swipe') { state.editingTaskId = button.dataset.taskId; return showScreen('task-editor', { updateHistory: true }); }
+  if (action === 'edit-task') {
+    const task = await ensureSelectedTask();
+    if (task?.status === 'completed') throw new Error('Завершённую задачу нельзя изменять.');
+    state.editingTaskId = state.selectedTaskId; return showScreen('task-editor', { updateHistory: true });
+  }
+  if (action === 'edit-task-list') { state.editingTaskId = button.dataset.taskId; return showScreen('task-editor', { updateHistory: true }); }
   if (action === 'new-entry') {
     state.editingEntryId = null;
     return showScreen('add-entry', { updateHistory: true });
@@ -1561,10 +1583,17 @@ async function handleAction(button) {
     showToast('Задача и связанные записи удалены');
     return showScreen('tasks', { updateHistory: true });
   }
-  if (action === 'delete-task-swipe') {
+  if (action === 'delete-task-list') {
     if (!confirm('Удалить задачу вместе со всеми её записями, аудио и историей изменений? Это действие нельзя отменить.')) return;
     await taskRepository.remove(button.dataset.taskId);
     showToast('Задача и связанные записи удалены');
+    return renderTasks();
+  }
+  if (action === 'complete-task-list') {
+    const task = await taskRepository.get(button.dataset.taskId);
+    if (!task || task.status === 'completed') return;
+    await taskRepository.save({ ...task, status: 'completed' });
+    showToast('Задача завершена');
     return renderTasks();
   }
   if (action === 'toggle-task-status') {
@@ -1589,6 +1618,14 @@ async function handleAction(button) {
   if (action === 'improve-task-description') return improveTaskDescription();
   if (action === 'copy-report') return copyReport();
   if (action === 'copy-text') return copyText(button.dataset.copyText);
+  if (action === 'open-report-period') {
+    const dialog = document.querySelector('#report-period-dialog');
+    document.querySelector('#report-from-date').value = state.reportFromDate;
+    document.querySelector('#report-to-date').value = state.reportToDate;
+    dialog?.showModal();
+    return;
+  }
+  if (action === 'close-report-period') { document.querySelector('#report-period-dialog')?.close(); return; }
   if (action === 'open-export') {
     openExportDialog();
     return;
@@ -1643,29 +1680,47 @@ document.addEventListener('click', async (event) => {
   }
 });
 
-let taskSwipeStart = null;
+let tabSwipeStart = null;
 document.addEventListener('touchstart', (event) => {
-  const row = event.target instanceof Element ? event.target.closest('.task-swipe') : null;
-  if (!row || event.touches.length !== 1) return;
-  taskSwipeStart = { row, x: event.touches[0].clientX, y: event.touches[0].clientY };
+  const tabs = event.target instanceof Element ? event.target.closest('[data-swipe-tabs]') : null;
+  if (!tabs || event.touches.length !== 1) return;
+  tabSwipeStart = { tabs, x: event.touches[0].clientX, y: event.touches[0].clientY };
 }, { passive: true });
 document.addEventListener('touchend', (event) => {
-  if (!taskSwipeStart) return;
+  if (!tabSwipeStart) return;
   const touch = event.changedTouches[0];
-  const { row, x, y } = taskSwipeStart;
-  taskSwipeStart = null;
+  const { tabs, x, y } = tabSwipeStart;
+  tabSwipeStart = null;
   const horizontal = touch.clientX - x;
   const vertical = Math.abs(touch.clientY - y);
   if (vertical > 42 || Math.abs(horizontal) < 42) return;
-  if (horizontal < 0) {
-    document.querySelectorAll('.task-swipe.is-open').forEach((item) => { if (item !== row) item.classList.remove('is-open'); });
-    row.classList.add('is-open'); row.setAttribute('aria-expanded', 'true');
-  } else {
-    row.classList.remove('is-open'); row.setAttribute('aria-expanded', 'false');
+  if (tabs.dataset.swipeTabs === 'tasks') {
+    const filters = ['active', 'completed', 'all'];
+    const current = filters.indexOf(state.taskFilter);
+    const next = Math.max(0, Math.min(filters.length - 1, current + (horizontal < 0 ? 1 : -1)));
+    if (next === current) return;
+    state.taskFilter = filters[next];
+    tabs.querySelectorAll('[data-task-filter]').forEach((button) => button.classList.toggle('is-selected', button.dataset.taskFilter === state.taskFilter));
+    renderTasks();
+  } else if (tabs.dataset.swipeTabs === 'reports') {
+    const nextRoute = state.currentRoute === 'reports' ? 'report-sppr' : 'reports';
+    showScreen(nextRoute, { updateHistory: true });
   }
 }, { passive: true });
 
 document.querySelector('#task-search')?.addEventListener('input', async (event) => { state.taskSearch = event.target.value; await renderTasks(); });
+document.querySelector('#report-period-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const fromDate = String(form.get('fromDate') ?? ''); const toDate = String(form.get('toDate') ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate) || !/^\d{4}-\d{2}-\d{2}$/.test(toDate) || fromDate > toDate) {
+    showToast('Укажите корректные даты периода.', 'error');
+    return;
+  }
+  state.reportFromDate = fromDate; state.reportToDate = toDate;
+  document.querySelector('#report-period-dialog')?.close();
+  await renderRoute(state.currentRoute);
+});
 document.querySelector('#entry-task-search')?.addEventListener('input', renderEntryTaskOptions);
 document.querySelector('#entry-task')?.addEventListener('change', (event) => { state.entryTaskSelection = event.target.value; });
 document.querySelectorAll('#entry-hours, #entry-minutes').forEach((input) => {
