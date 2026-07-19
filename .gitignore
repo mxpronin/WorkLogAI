@@ -1,0 +1,28 @@
+# Reproducible JavaScript dependencies and tooling caches
+node_modules/
+.npm/
+__pycache__/
+*.py[cod]
+
+# Generated Capacitor and Android build outputs
+www/
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+*.aab
+
+# Local IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Signing material and local environment configuration
+*.jks
+*.keystore
+*.pem
+.env
+.env.*
+!.env.example

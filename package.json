@@ -1,0 +1,22 @@
+{
+  "name": "worklog-ai",
+  "version": "0.6.15",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "prepare:web": "node scripts/prepare-web.mjs",
+    "android:sync": "npm run prepare:web && npx cap sync android",
+    "android:apk": "npm run android:sync && cd android && gradlew.bat assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/camera": "^7.0.5",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/local-notifications": "^7.0.7"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}

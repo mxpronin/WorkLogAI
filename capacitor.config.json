@@ -1,0 +1,14 @@
+{
+  "appId": "ru.worklogai.app",
+  "appName": "WorkLog AI",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_worklog",
+      "iconColor": "#6750A4"
+    }
+  }
+}
