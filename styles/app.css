@@ -87,13 +87,12 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .task-card__times b, .inline-times b { color: var(--green); font-size: 13px; font-weight: 600; }
 .task-card__times em, .inline-times em { color: var(--violet); font-size: 13px; font-style: normal; }
 .inline-times { display: flex; gap: 12px; align-items: center; }
-.task-swipe { position: relative; overflow: hidden; border-radius: var(--radius-sm); touch-action: pan-y; }
-.task-swipe__actions { position: absolute; inset: 0 0 0 auto; width: 154px; display: grid; grid-template-columns: 1fr 1fr; }
-.task-swipe__actions button { color: white; font-size: 11px; font-weight: 700; }
-.task-swipe__edit { background: #3579bd; }
-.task-swipe__delete { background: var(--danger); }
-.task-swipe .task-card { position: relative; z-index: 1; transition: transform 180ms ease; }
-.task-swipe.is-open .task-card { transform: translateX(-154px); }
+.task-list-item { display: flex; align-items: stretch; gap: 7px; }
+.task-list-item .task-card { flex: 1; min-width: 0; }
+.task-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.task-card-actions .icon-button { width: 36px; height: 36px; color: var(--muted); }
+.task-card-actions .icon-button--complete { color: var(--green); }
+.task-card-actions .icon-button--delete { color: var(--danger); }
 .reminder-countdown { margin: 10px 0 0; color: var(--violet); font-size: 12px; font-weight: 700; text-align: center; }
 
 .primary-button, .secondary-button { min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border-radius: 12px; font-weight: 720; }
@@ -269,6 +268,15 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .report-task-card { width: 100%; min-height: 58px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
 .report-task-card > span:first-child { min-width: 0; display: grid; gap: 3px; }
 .report-task-card .task-card__times { display: flex; gap: 10px; }
+.report-table-section { margin-top: 12px; }
+.report-table-section h2 { margin: 0 0 8px; font-size: 15px; }
+.report-table { overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; }
+.report-table__head, .report-table__row { display: grid; grid-template-columns: 1fr 76px 76px; gap: 8px; align-items: center; padding: 10px 12px; }
+.report-table__head { color: var(--muted); font-size: 10px; }
+.report-table__row { min-height: 47px; border-top: 1px solid var(--border); font-size: 12px; }
+.report-table__row span:not(:first-child), .report-table__head span:not(:first-child) { text-align: right; }
+.report-table__row b { color: var(--green); font-weight: 600; }
+.report-table__row em { color: var(--violet); font-style: normal; }
 .summary-card { padding: 16px; display: grid; gap: 3px; background: linear-gradient(140deg, var(--violet-dim), var(--surface-2)); border: 1px solid rgba(128,104,255,.22); border-radius: 14px; }
 .summary-card > span { color: var(--muted); font-size: 12px; }
 .summary-card strong { color: var(--violet); font-size: 27px; letter-spacing: -.03em; }
@@ -345,6 +353,15 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .export-dialog .field { margin: 0 0 14px; }
 .export-dialog .note-panel { width: 100%; }
 .export-dialog textarea { min-height: 150px; }
+.export-period { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.export-period .field { min-width: 0; }
+.export-period input { min-width: 0; }
+.export-status { padding: 10px 12px; color: var(--text) !important; background: rgba(116, 87, 217, .12); border: 1px solid rgba(116, 87, 217, .35); border-radius: 10px; }
+.export-dialog[aria-busy="true"] .export-options button { opacity: .55; pointer-events: none; }
+
+@media (max-width: 420px) {
+  .export-period { grid-template-columns: 1fr; gap: 0; }
+}
 .export-options { display: grid; gap: 8px; }
 .export-options button { min-height: 50px; padding: 0 14px; color: var(--text); text-align: left; background: var(--surface-3); border: 1px solid var(--border); border-radius: 10px; }
 

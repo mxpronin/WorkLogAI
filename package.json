@@ -1,6 +1,6 @@
 {
   "name": "worklog-ai",
-  "version": "0.6.15",
+  "version": "0.6.18",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,9 +14,15 @@
     "@capacitor/app": "^7.1.2",
     "@capacitor/camera": "^7.0.5",
     "@capacitor/core": "^7.4.3",
-    "@capacitor/local-notifications": "^7.0.7"
+    "@capacitor/filesystem": "^7.1.8",
+    "@capawesome/capacitor-file-picker": "^7.2.0",
+    "@capacitor/local-notifications": "^7.0.7",
+    "@capacitor/share": "^7.0.4",
+    "exceljs": "^4.4.0",
+    "pdfmake": "^0.3.11"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.4.3"
+    "@capacitor/cli": "^7.4.3",
+    "fake-indexeddb": "^6.2.5"
   }
 }

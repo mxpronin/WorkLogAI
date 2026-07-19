@@ -19,6 +19,7 @@
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
       <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7" /></symbol>
       <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4.2-1 10.6-10.6a2 2 0 0 0-2.8-2.8L5.4 16.2Z" /><path d="m14.5 7.1 2.8 2.8" /></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v5m4-5v5M9 7l1-3h4l1 3M6 7l1 13h10l1-13" /></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></symbol>
       <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" /></symbol>
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2" /></symbol>
@@ -106,7 +107,7 @@
         </section>
 
         <!-- Задачи -->
-        <section class="screen" data-screen="tasks" aria-labelledby="tasks-title" hidden>
+        <section class="screen" data-screen="tasks" data-swipe-tabs="tasks" aria-labelledby="tasks-title" hidden>
           <header class="topbar"><span class="topbar__spacer"></span><h1 id="tasks-title">Задачи</h1><button class="icon-button icon-button--accent" type="button" data-action="new-task" aria-label="Добавить задачу"><svg><use href="#i-plus" /></svg></button></header>
           <div class="screen__content">
             <label class="search-field"><svg><use href="#i-search" /></svg><input id="task-search" type="search" placeholder="Поиск: номер, название, описание, работы" aria-label="Поиск по номеру, названию, описанию и выполненным работам" /></label>
@@ -199,28 +200,28 @@
         </section>
 
         <!-- Отчеты: реальная загрузка -->
-        <section class="screen" data-screen="reports" aria-labelledby="reports-title" hidden>
+        <section class="screen" data-screen="reports" data-swipe-tabs="reports" aria-labelledby="reports-title" hidden>
           <header class="topbar"><span class="topbar__spacer"></span><h1 id="reports-title">Отчёты</h1><span class="topbar__spacer"></span></header>
           <div class="screen__content">
             <div class="tab-switch"><button class="is-selected" type="button">Реальная загрузка</button><button type="button" data-route="report-sppr">СППР</button></div>
-            <button class="period-picker" type="button" data-route="calendar"><span><small>Неделя</small><strong id="report-period-label">—</strong></span><svg><use href="#i-calendar" /></svg></button>
+            <button class="period-picker" type="button" data-action="open-report-period"><span><small>Период</small><strong id="report-period-label">—</strong></span><svg><use href="#i-calendar" /></svg></button>
             <div class="metric-grid"><article class="metric-card metric-card--actual"><span>Реально</span><strong id="report-actual-total">0ч 00м</strong><small id="report-average">нет записей</small></article><article class="metric-card metric-card--sppr"><span>СППР</span><strong>0ч 00м</strong><small>ещё не сформировано</small></article></div>
-            <article class="chart-card"><div class="chart-head"><strong>Часы по дням</strong><span><i class="dot dot--actual"></i> Реально <i class="dot dot--sppr"></i> СППР</span></div><div class="chart"><div class="axis"><span>12ч</span><span>8ч</span><span>4ч</span><span>0ч</span></div><div class="bars" id="report-bars"></div></div></article>
+            <section class="report-table-section"><h2>Часы по дням</h2><div class="report-table"><div class="report-table__head"><span>День</span><span>Реально</span><span>СППР</span></div><div id="report-day-list"></div></div></section>
             <div class="section-heading"><h2>По задачам</h2><span class="muted" id="report-task-count">0 задач</span></div>
             <div class="report-task-list" id="report-task-list"></div>
           </div>
         </section>
 
         <!-- Отчеты: СППР -->
-        <section class="screen" data-screen="report-sppr" aria-labelledby="sppr-report-title" hidden>
+        <section class="screen" data-screen="report-sppr" data-swipe-tabs="reports" aria-labelledby="sppr-report-title" hidden>
           <header class="topbar"><button class="icon-button" type="button" data-back aria-label="Назад"><svg><use href="#i-back" /></svg></button><h1 id="sppr-report-title">Отчёт СППР</h1><button class="icon-button" type="button" data-action="open-export" aria-label="Экспортировать"><svg><use href="#i-export" /></svg></button></header>
           <div class="screen__content">
             <div class="tab-switch"><button type="button" data-route="reports">Реальная загрузка</button><button class="is-selected" type="button">СППР</button></div>
-            <button class="period-picker" type="button" data-route="calendar"><span><small>Неделя</small><strong id="sppr-report-period">—</strong></span><svg><use href="#i-calendar" /></svg></button>
+            <button class="period-picker" type="button" data-action="open-report-period"><span><small>Период</small><strong id="sppr-report-period">—</strong></span><svg><use href="#i-calendar" /></svg></button>
             <article class="summary-card"><span>Всего для СППР</span><strong id="sppr-report-total">0ч 00м</strong><small id="sppr-report-status"><svg><use href="#i-check" /></svg> Нет подготовленных дней</small></article>
             <div class="day-report-list" id="sppr-day-list"></div>
             <button class="primary-button" type="button" data-action="copy-report"><svg><use href="#i-copy" /></svg> Копировать весь отчёт</button>
-            <button class="secondary-button secondary-button--wide" type="button" data-action="open-export"><svg><use href="#i-export" /></svg> Экспорт: Excel / PDF / Текст</button>
+            <button class="secondary-button secondary-button--wide" type="button" data-action="open-export"><svg><use href="#i-export" /></svg> Экспорт: Excel / PDF</button>
           </div>
         </section>
 
@@ -237,7 +238,7 @@
               <button type="button" data-route="settings" data-settings-section="data"><span class="settings-icon settings-icon--amber"><svg><use href="#i-database" /></svg></span><span><strong>Данные и резервные копии</strong><small>Хранятся только на этом устройстве</small></span><svg><use href="#i-chevron" /></svg></button>
             </nav>
             <div class="privacy-card"><svg><use href="#i-database" /></svg><div><strong>Ваши данные — ваши</strong><p>Реальные записи остаются на устройстве. Перед отправкой заметок внешнему ИИ приложение запросит согласие.</p></div></div>
-            <p class="version">WorkLog AI · версия 0.6.15</p>
+            <p class="version">WorkLog AI · версия 0.6.18</p>
           </div>
         </section>
 
@@ -292,9 +293,27 @@
       </nav>
     </div>
 
-    <dialog class="export-dialog" id="export-dialog" aria-labelledby="export-dialog-title"><form method="dialog"><header><strong id="export-dialog-title">Экспорт отчёта</strong><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></header><p>Выберите формат. PDF откроет системную печать, где можно выбрать «Сохранить как PDF».</p><div class="export-options"><button type="button" data-action="export-csv">Excel · CSV</button><button type="button" data-action="export-text">Текст · TXT</button><button type="button" data-action="export-print">PDF · Печать</button></div></form></dialog>
+    <dialog class="export-dialog" id="export-dialog" aria-labelledby="export-dialog-title">
+      <form method="dialog" id="export-form">
+        <header><strong id="export-dialog-title">Экспорт отчёта СППР</strong><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></header>
+        <p>Выберите период. В отчёт попадут завершённые, активные и черновые дни с данными.</p>
+        <div class="export-period">
+          <label class="field"><span>Дата начала</span><span class="input-control"><input id="export-from-date" name="fromDate" type="date" required /></span></label>
+          <label class="field"><span>Дата окончания</span><span class="input-control"><input id="export-to-date" name="toDate" type="date" required /></span></label>
+        </div>
+        <p class="export-status" id="export-status" role="status" aria-live="polite" hidden></p>
+        <div class="export-options">
+          <button type="button" data-action="export-xlsx">Выгрузить в Excel</button>
+          <button type="button" data-action="export-pdf">Выгрузить в PDF</button>
+        </div>
+      </form>
+    </dialog>
     <dialog class="export-dialog" id="sppr-description-dialog" aria-labelledby="sppr-description-dialog-title"><form id="sppr-description-form"><header><strong id="sppr-description-dialog-title">Описание СППР</strong><button class="icon-button" type="button" data-action="close-sppr-description" aria-label="Закрыть">×</button></header><p>Изменение влияет только на текст для СППР и не меняет фактическую заметку или время.</p><label class="field"><span class="sr-only">Описание СППР</span><span class="note-panel note-panel--input"><textarea id="sppr-description-editor" name="spprDescription" rows="7" maxlength="5000" required></textarea></span></label><button class="primary-button" type="submit">Сохранить описание СППР</button></form></dialog>
+    <dialog class="export-dialog" id="report-period-dialog" aria-labelledby="report-period-dialog-title"><form id="report-period-form"><header><strong id="report-period-dialog-title">Период отчёта</strong><button class="icon-button" type="button" data-action="close-report-period" aria-label="Закрыть">×</button></header><p>По умолчанию выбрана текущая неделя. Можно задать любой период.</p><label class="field"><span>Дата начала</span><span class="input-control"><input id="report-from-date" name="fromDate" type="date" required /></span></label><label class="field"><span>Дата окончания</span><span class="input-control"><input id="report-to-date" name="toDate" type="date" required /></span></label><button class="primary-button" type="submit">Показать отчёт</button></form></dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    <script type="module" src="./src/app.js?v=0.6.15"></script>
+    <script src="./node_modules/exceljs/dist/exceljs.min.js"></script>
+    <script src="./node_modules/pdfmake/build/pdfmake.min.js"></script>
+    <script src="./node_modules/pdfmake/build/vfs_fonts.js"></script>
+    <script type="module" src="./src/app.js?v=0.6.18"></script>
   </body>
 </html>

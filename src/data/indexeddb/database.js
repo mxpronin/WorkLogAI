@@ -90,3 +90,20 @@ export async function runTransaction(storeNames, mode, operation) {
   await completion;
   return result;
 }
+
+export async function resetDatabaseForTests() {
+  if (databasePromise) {
+    try {
+      (await databasePromise).close();
+    } catch {
+      // Ignore a failed open while resetting an isolated test database.
+    }
+  }
+  databasePromise = undefined;
+  await new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DATABASE_NAME);
+    request.addEventListener('success', resolve, { once: true });
+    request.addEventListener('error', () => reject(request.error), { once: true });
+    request.addEventListener('blocked', () => reject(new Error('Тестовая база заблокирована.')), { once: true });
+  });
+}
