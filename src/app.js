@@ -15,6 +15,8 @@ import { getNativePlugin } from './platform/capacitor.js';
 import { hasRecordedWork } from './domain/work-day.js';
 import { buildTaskHistory, getTaskSpprTotals } from './domain/task-history.js';
 import { distributeSpprWithLimits, getRemainingSpprMinutes } from './domain/sppr-limits.js';
+import { buildSpprExportReport } from './domain/sppr-report.js';
+import { createExcelReportBlob, createPdfReportBlob, deliverReportFile } from './reports/export.js';
 
 const screens = new Map([...document.querySelectorAll('[data-screen]')].map((screen) => [screen.dataset.screen, screen]));
 const primaryRoutes = new Set(['tasks', 'calendar', 'reports', 'more']);
@@ -72,6 +74,7 @@ const state = {
   routeStack: ['calendar'],
   reportText: '',
   reportRows: [],
+  exportBusy: false,
   ai: {
     provider: 'openai-compatible',
     baseUrl: DEFAULT_AI_BASE_URL,
@@ -430,10 +433,6 @@ function downloadFile(content, filename, type) {
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function csvCell(value) {
-  return `"${String(value ?? '').replaceAll('"', '""')}"`;
 }
 
 function applyTheme() {
@@ -899,13 +898,12 @@ async function renderEndDay() {
   const difference = targetMinutes - actual;
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const historicTotals = getTaskSpprTotals(workDays.filter((day) => day.localDate !== state.selectedDate));
-  const groups = [...entries.reduce((map, entry) => {
+  const groups = [...entries.filter((entry) => entry.excludeFromSppr !== true).reduce((map, entry) => {
     const current = map.get(entry.taskId) ?? { taskId: entry.taskId, actualMinutes: 0 };
     current.actualMinutes += Math.max(0, Number(entry.actualMinutes) || 0);
     map.set(entry.taskId, current);
     return map;
   }, new Map()).values()]
-    .filter((group) => !taskMap.get(group.taskId)?.excludeFromSppr)
     .map((group) => ({ ...group, remainingSpprMinutes: getRemainingSpprMinutes(taskMap.get(group.taskId)?.maxSpprMinutes, historicTotals.get(group.taskId) ?? 0) }));
   const availableMinutes = distributeSpprWithLimits(groups, targetMinutes).reduce((sum, allocation) => sum + allocation.spprMinutes, 0);
   setText('#end-day-date', formatDate(state.selectedDate, { weekday: 'long', day: 'numeric', month: 'long' }));
@@ -960,8 +958,14 @@ async function improveDayWithAi(tasks, entries, targetMinutes, eligibleGroups) {
     localDate: state.selectedDate,
     targetMinutes,
     distributionTaskIds: eligibleGroups.map((group) => group.taskId),
-    tasks: tasks.filter((task) => eligibleTaskIds.has(task.id)).map((task) => ({ taskId: task.id, spprNumber: task.spprNumber, title: task.title, excludeFromSppr: task.excludeFromSppr === true })),
-    entries: entries.filter((entry) => eligibleTaskIds.has(entry.taskId)).map((entry) => entryPayload(entry, taskMap.get(entry.taskId))),
+    tasks: tasks.filter((task) => eligibleTaskIds.has(task.id)).map((task) => ({
+      taskId: task.id,
+      spprNumber: task.spprNumber,
+      title: task.title,
+    })),
+    entries: entries
+      .filter((entry) => eligibleTaskIds.has(entry.taskId) && entry.excludeFromSppr !== true)
+      .map((entry) => entryPayload(entry, taskMap.get(entry.taskId))),
   };
   const response = await completeJson(state.ai, buildPrompt('day', state.ai.prompts.day, payload));
   const result = parseAiResult('day', response);
@@ -1024,7 +1028,7 @@ async function finishDay() {
     return;
   }
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
-  const grouped = [...entries.reduce((map, entry) => {
+  const grouped = [...entries.filter((entry) => entry.excludeFromSppr !== true).reduce((map, entry) => {
     const current = map.get(entry.taskId) ?? { taskId: entry.taskId, actualMinutes: 0, entries: [] };
     current.actualMinutes += entry.actualMinutes;
     current.entries.push(entry);
@@ -1033,7 +1037,6 @@ async function finishDay() {
   }, new Map()).values()];
   const historicTotals = getTaskSpprTotals(workDays.filter((day) => day.localDate !== state.selectedDate));
   const eligibleGroups = grouped
-    .filter((group) => !taskMap.get(group.taskId)?.excludeFromSppr)
     .map((group) => ({
       ...group,
       remainingSpprMinutes: getRemainingSpprMinutes(taskMap.get(group.taskId)?.maxSpprMinutes, historicTotals.get(group.taskId) ?? 0),
@@ -1361,25 +1364,63 @@ async function copyText(text) {
 }
 
 async function exportReport(format) {
-  if (!state.reportRows.length) await renderSpprReport();
-  if (!state.reportRows.length) throw new Error('В отчёте пока нет подготовленных данных для экспорта.');
-  const date = toLocalDate();
-  if (format === 'text') {
-    downloadFile(state.reportText, `worklog-sppr-${date}.txt`, 'text/plain;charset=utf-8');
-  } else if (format === 'csv') {
-    const rows = [
-      ['Дата', 'Задача', 'Название', 'Время СППР, минут', 'Описание'],
-      ...state.reportRows.map((row) => [row.date, row.task, row.title, row.minutes, row.description]),
-    ];
-    const csv = '\uFEFF' + rows.map((row) => row.map(csvCell).join(';')).join('\r\n');
-    downloadFile(csv, `worklog-sppr-${date}.csv`, 'text/csv;charset=utf-8');
-  } else if (format === 'print') {
-    document.querySelector('#export-dialog')?.close();
-    window.print();
+  if (state.exportBusy) return;
+  const dialog = document.querySelector('#export-dialog');
+  const status = document.querySelector('#export-status');
+  const fromDate = document.querySelector('#export-from-date')?.value;
+  const toDate = document.querySelector('#export-to-date')?.value;
+  if (!fromDate || !toDate) {
+    showToast('Укажите дату начала и окончания отчёта.');
     return;
   }
-  document.querySelector('#export-dialog')?.close();
-  showToast('Файл отчёта создан');
+  if (fromDate > toDate) {
+    showToast('Дата начала не может быть позже даты окончания.');
+    return;
+  }
+  state.exportBusy = true;
+  dialog?.setAttribute('aria-busy', 'true');
+  if (status) {
+    status.hidden = false;
+    status.textContent = format === 'xlsx' ? 'Формируем Excel с дашбордом…' : 'Формируем PDF с дашбордом…';
+  }
+  try {
+    const [tasks, entries, workDays] = await Promise.all([
+      taskRepository.list({ includeArchived: true }),
+      workEntryRepository.list({ fromDate, toDate }),
+      workDayRepository.list({ fromDate, toDate }),
+    ]);
+    const report = buildSpprExportReport({ fromDate, toDate, tasks, entries, workDays });
+    if (!report.rows.length) throw new Error('За выбранный период нет данных для отчёта.');
+    const blob = format === 'xlsx'
+      ? await createExcelReportBlob(report)
+      : await createPdfReportBlob(report);
+    const extension = format === 'xlsx' ? 'xlsx' : 'pdf';
+    const filename = `worklog-sppr-${fromDate}-${toDate}.${extension}`;
+    if (status) status.textContent = 'Отчёт готов. Открываем системное меню отправки…';
+    await deliverReportFile({
+      blob,
+      filename,
+      title: `Отчёт СППР ${report.periodLabel}`,
+      filesystem: nativePlugin('Filesystem'),
+      share: nativePlugin('Share'),
+      browserDownload: downloadFile,
+    });
+    dialog?.close();
+    showToast('Отчёт сформирован');
+  } finally {
+    state.exportBusy = false;
+    dialog?.removeAttribute('aria-busy');
+    if (status) status.hidden = true;
+  }
+}
+
+function openExportDialog() {
+  const weekStart = startOfWeek(new Date());
+  document.querySelector('#export-from-date').value = toLocalDate(weekStart);
+  document.querySelector('#export-to-date').value = toLocalDate(addDays(weekStart, 6));
+  const status = document.querySelector('#export-status');
+  if (status) status.hidden = true;
+  document.querySelector('#export-dialog')?.showModal();
 }
 
 async function backupData() {
@@ -1391,17 +1432,28 @@ async function backupData() {
 async function beginToday() {
   const date = state.selectedDate;
   state.weekStart = startOfWeek(parseLocalDate(date));
-  await startWorkDay(date);
+  if (!await startWorkDay(date)) return;
   await renderToday();
 }
 
 async function beginSelectedDay() {
-  await startWorkDay(state.selectedDate);
+  if (!await startWorkDay(state.selectedDate)) return;
   await renderCalendar();
 }
 
 async function startWorkDay(localDate) {
-  await workDayRepository.start({ localDate, targetMinutes: roundToInterval(state.settings.dailyTargetMinutes, 30) });
+  try {
+    await workDayRepository.start({ localDate, targetMinutes: roundToInterval(state.settings.dailyTargetMinutes, 30) });
+  } catch (error) {
+    if (error?.code !== 'ACTIVE_DAY_EXISTS' || !error.activeLocalDate) throw error;
+    const activeDate = error.activeLocalDate;
+    if (confirm(`Уже активен рабочий день за ${formatDate(activeDate)}. Завершите его перед запуском другого.\n\nПерейти к активному дню?`)) {
+      state.selectedDate = activeDate;
+      state.weekStart = startOfWeek(parseLocalDate(activeDate));
+      await showScreen('calendar', { updateHistory: true });
+    }
+    return false;
+  }
   let notificationScheduled = false;
   let notificationError = null;
   try {
@@ -1413,6 +1465,7 @@ async function startWorkDay(localDate) {
   scheduleReminder();
   if (notificationError) showToast(`Рабочий день начат, но напоминания не включены: ${notificationError.message}`, 'error');
   else showToast(notificationScheduled ? `Рабочий день начат. Системное напоминание через ${reminderIntervalLabel(state.settings.reminderInterval)}.` : 'Рабочий день начат');
+  return true;
 }
 
 async function ensureDayForEntry(localDate) {
@@ -1451,7 +1504,12 @@ async function handleAction(button) {
     document.querySelector('#sppr-description-dialog')?.close();
     return;
   }
-  if (action === 'delete-entry') { if (!confirm('Удалить эту заметку?')) return; await workEntryRepository.remove(button.dataset.entryId); showToast('Заметка удалена'); return renderTaskDetail(); }
+  if (action === 'delete-entry') {
+    if (!confirm('Удалить эту запись вместе со всеми вложениями и историей изменений? Действие нельзя отменить.')) return;
+    await workEntryRepository.remove(button.dataset.entryId);
+    showToast('Запись и связанные данные удалены');
+    return renderTaskDetail();
+  }
   if (action === 'archive-task') { if (!confirm('Архивировать задачу? Заметки сохранятся.')) return; await taskRepository.archive(state.selectedTaskId); showToast('Задача архивирована'); return showScreen('tasks', { updateHistory: true }); }
   if (action === 'delete-task') {
     if (!confirm('Удалить задачу вместе со всеми её записями, аудио и историей изменений? Это действие нельзя отменить.')) return;
@@ -1489,12 +1547,11 @@ async function handleAction(button) {
   if (action === 'copy-report') return copyReport();
   if (action === 'copy-text') return copyText(button.dataset.copyText);
   if (action === 'open-export') {
-    if (!state.reportRows.length) await renderSpprReport();
-    document.querySelector('#export-dialog')?.showModal();
+    openExportDialog();
+    return;
   }
-  if (action === 'export-csv') return exportReport('csv');
-  if (action === 'export-text') return exportReport('text');
-  if (action === 'export-print') return exportReport('print');
+  if (action === 'export-xlsx') return exportReport('xlsx');
+  if (action === 'export-pdf') return exportReport('pdf');
   if (action === 'backup-data') return backupData();
   if (action === 'choose-backup') document.querySelector('#backup-file')?.click();
   if (action === 'clear-ai-key') {
@@ -1612,6 +1669,14 @@ document.querySelector('#entry-form')?.addEventListener('submit', async (event) 
     const existingAttachments = editingEntryId ? await workEntryRepository.listAttachments(editingEntryId) : [];
     if (entryType === 'voice' && !state.recordingBlob && !existingAudio) throw new Error('Запишите голосовую заметку.');
     if (entryType === 'file' && !attachments.length && !existingAttachments.length) throw new Error('Выберите хотя бы один файл или сделайте фото.');
+    if (editingEntryId) {
+      const nextLocalDate = String(form.get('localDate') ?? '');
+      const impact = await workEntryRepository.getMoveImpact(editingEntryId, nextLocalDate);
+      if (impact.requiresConfirmation) {
+        const dates = impact.affectedDates.map((date) => formatDate(date)).join(', ');
+        if (!confirm(`Перенос записи сбросит готовое распределение СППР за: ${dates}. Эти дни потребуется завершить повторно.\n\nПродолжить перенос?`)) return;
+      }
+    }
     await ensureDayForEntry(form.get('localDate'));
     const entry = await workEntryRepository.save({ id: editingEntryId, submissionKey, taskId: form.get('taskId'), localDate: form.get('localDate'), note: form.get('note'), actualMinutes: durationFromForm(form), entryType }, attachments);
     if (state.audioTranscript && entryType === 'voice') {
@@ -1842,6 +1907,10 @@ try {
   scheduleReminder();
   startReminderCountdown();
   await workDayRepository.normalizeLegacyDrafts();
+  const activeDayNormalization = await workDayRepository.normalizeMultipleActiveDays();
+  if (activeDayNormalization.normalized) {
+    showToast(`Оставлен один активный рабочий день за ${formatDate(activeDayNormalization.keptDate)}.`);
+  }
   await workDayRepository.normalizeEmptyFinishedDays();
   await seedInitialData();
   const initialRoute = resolveRoute();

@@ -220,7 +220,7 @@
             <article class="summary-card"><span>Всего для СППР</span><strong id="sppr-report-total">0ч 00м</strong><small id="sppr-report-status"><svg><use href="#i-check" /></svg> Нет подготовленных дней</small></article>
             <div class="day-report-list" id="sppr-day-list"></div>
             <button class="primary-button" type="button" data-action="copy-report"><svg><use href="#i-copy" /></svg> Копировать весь отчёт</button>
-            <button class="secondary-button secondary-button--wide" type="button" data-action="open-export"><svg><use href="#i-export" /></svg> Экспорт: Excel / PDF / Текст</button>
+            <button class="secondary-button secondary-button--wide" type="button" data-action="open-export"><svg><use href="#i-export" /></svg> Экспорт: Excel / PDF</button>
           </div>
         </section>
 
@@ -237,7 +237,7 @@
               <button type="button" data-route="settings" data-settings-section="data"><span class="settings-icon settings-icon--amber"><svg><use href="#i-database" /></svg></span><span><strong>Данные и резервные копии</strong><small>Хранятся только на этом устройстве</small></span><svg><use href="#i-chevron" /></svg></button>
             </nav>
             <div class="privacy-card"><svg><use href="#i-database" /></svg><div><strong>Ваши данные — ваши</strong><p>Реальные записи остаются на устройстве. Перед отправкой заметок внешнему ИИ приложение запросит согласие.</p></div></div>
-            <p class="version">WorkLog AI · версия 0.6.15</p>
+            <p class="version">WorkLog AI · версия 0.6.16</p>
           </div>
         </section>
 
@@ -292,9 +292,26 @@
       </nav>
     </div>
 
-    <dialog class="export-dialog" id="export-dialog" aria-labelledby="export-dialog-title"><form method="dialog"><header><strong id="export-dialog-title">Экспорт отчёта</strong><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></header><p>Выберите формат. PDF откроет системную печать, где можно выбрать «Сохранить как PDF».</p><div class="export-options"><button type="button" data-action="export-csv">Excel · CSV</button><button type="button" data-action="export-text">Текст · TXT</button><button type="button" data-action="export-print">PDF · Печать</button></div></form></dialog>
+    <dialog class="export-dialog" id="export-dialog" aria-labelledby="export-dialog-title">
+      <form method="dialog" id="export-form">
+        <header><strong id="export-dialog-title">Экспорт отчёта СППР</strong><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></header>
+        <p>Выберите период. В отчёт попадут завершённые, активные и черновые дни с данными.</p>
+        <div class="export-period">
+          <label class="field"><span>Дата начала</span><span class="input-control"><input id="export-from-date" name="fromDate" type="date" required /></span></label>
+          <label class="field"><span>Дата окончания</span><span class="input-control"><input id="export-to-date" name="toDate" type="date" required /></span></label>
+        </div>
+        <p class="export-status" id="export-status" role="status" aria-live="polite" hidden></p>
+        <div class="export-options">
+          <button type="button" data-action="export-xlsx">Выгрузить в Excel</button>
+          <button type="button" data-action="export-pdf">Выгрузить в PDF</button>
+        </div>
+      </form>
+    </dialog>
     <dialog class="export-dialog" id="sppr-description-dialog" aria-labelledby="sppr-description-dialog-title"><form id="sppr-description-form"><header><strong id="sppr-description-dialog-title">Описание СППР</strong><button class="icon-button" type="button" data-action="close-sppr-description" aria-label="Закрыть">×</button></header><p>Изменение влияет только на текст для СППР и не меняет фактическую заметку или время.</p><label class="field"><span class="sr-only">Описание СППР</span><span class="note-panel note-panel--input"><textarea id="sppr-description-editor" name="spprDescription" rows="7" maxlength="5000" required></textarea></span></label><button class="primary-button" type="submit">Сохранить описание СППР</button></form></dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    <script type="module" src="./src/app.js?v=0.6.15"></script>
+    <script src="./node_modules/exceljs/dist/exceljs.min.js"></script>
+    <script src="./node_modules/pdfmake/build/pdfmake.min.js"></script>
+    <script src="./node_modules/pdfmake/build/vfs_fonts.js"></script>
+    <script type="module" src="./src/app.js?v=0.6.16"></script>
   </body>
 </html>

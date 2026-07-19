@@ -345,6 +345,15 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .export-dialog .field { margin: 0 0 14px; }
 .export-dialog .note-panel { width: 100%; }
 .export-dialog textarea { min-height: 150px; }
+.export-period { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.export-period .field { min-width: 0; }
+.export-period input { min-width: 0; }
+.export-status { padding: 10px 12px; color: var(--text) !important; background: rgba(116, 87, 217, .12); border: 1px solid rgba(116, 87, 217, .35); border-radius: 10px; }
+.export-dialog[aria-busy="true"] .export-options button { opacity: .55; pointer-events: none; }
+
+@media (max-width: 420px) {
+  .export-period { grid-template-columns: 1fr; gap: 0; }
+}
 .export-options { display: grid; gap: 8px; }
 .export-options button { min-height: 50px; padding: 0 14px; color: var(--text); text-align: left; background: var(--surface-3); border: 1px solid var(--border); border-radius: 10px; }
 

@@ -42,6 +42,60 @@ function entryHasSavedAllocation(workDay, entry) {
   return entryAllocations.some((item) => item.entryId === entry.id);
 }
 
+function reconcileDayAfterEntryMutation(workDays, day, remainingEntries, {
+  invalidateFinished = false,
+  timestamp = now(),
+} = {}) {
+  if (!day) return;
+  if (!remainingEntries.length) {
+    workDays.delete(day.id);
+    return;
+  }
+  if (day.state !== 'finished' || !invalidateFinished) return;
+  if (hasRecordedWork(remainingEntries)) {
+    workDays.put({
+      ...day,
+      state: 'active',
+      finishedAt: null,
+      allocationStrategy: null,
+      allocations: [],
+      aiWarnings: [],
+      updatedAt: timestamp,
+    });
+    return;
+  }
+  workDays.put({
+    ...day,
+    state: 'draft',
+    startedAt: null,
+    finishedAt: null,
+    allocationStrategy: null,
+    allocations: [],
+    aiWarnings: [],
+    updatedAt: timestamp,
+  });
+}
+
+async function keepSingleStartedDay(workDays, timestamp = now()) {
+  const activeDays = (await requestToPromise(workDays.getAll()))
+    .filter((day) => day.state === 'active' && day.startedAt)
+    .sort((left, right) =>
+      String(right.startedAt).localeCompare(String(left.startedAt))
+      || right.localDate.localeCompare(left.localDate),
+    );
+  activeDays.slice(1).forEach((day) => workDays.put({
+    ...day,
+    state: 'draft',
+    startedAt: null,
+    finishedAt: null,
+    allocationStrategy: null,
+    allocations: [],
+    aiWarnings: [],
+    updatedAt: timestamp,
+  }));
+  return { keptDate: activeDays[0]?.localDate ?? null, normalized: Math.max(0, activeDays.length - 1) };
+}
+
 function isValidLocalDate(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
   if (!match) return false;
@@ -156,14 +210,17 @@ export const taskRepository = {
       const attachments = transaction.objectStore('audioAttachments');
       (await requestToPromise(attachments.getAll())).filter((attachment) => entryIds.has(attachment.workEntryId)).forEach((attachment) => attachments.delete(attachment.id));
 
-      const datesToRecalculate = new Set(taskEntries.map((entry) => entry.localDate));
       const workDays = transaction.objectStore('workDays');
       const timestamp = now();
+      const remainingEntries = (await requestToPromise(entries.getAll())).filter((entry) => !entryIds.has(entry.id) && !entry.deletedAt);
       (await requestToPromise(workDays.getAll())).forEach((day) => {
-        if (datesToRecalculate.has(day.localDate) || day.allocations?.some((allocation) => allocation.taskId === id)) {
-          workDays.put({ ...day, state: 'active', finishedAt: null, allocationStrategy: null, allocations: [], updatedAt: timestamp });
+        const invalidateFinished = day.allocations?.some((allocation) => allocation.taskId === id) === true;
+        const dayEntries = remainingEntries.filter((entry) => entry.localDate === day.localDate);
+        if (invalidateFinished || taskEntries.some((entry) => entry.localDate === day.localDate)) {
+          reconcileDayAfterEntryMutation(workDays, day, dayEntries, { invalidateFinished, timestamp });
         }
       });
+      await keepSingleStartedDay(workDays, timestamp);
       tasks.delete(id);
     });
   },
@@ -189,6 +246,25 @@ export const workEntryRepository = {
     return runTransaction(['workEntries'], 'readonly', (transaction) =>
       requestToPromise(transaction.objectStore('workEntries').get(id)),
     );
+  },
+
+  async getMoveImpact(id, nextLocalDate) {
+    if (!id || !isValidLocalDate(nextLocalDate)) return { requiresConfirmation: false, affectedDates: [] };
+    return runTransaction(['workEntries', 'workDays'], 'readonly', async (transaction) => {
+      const entry = await requestToPromise(transaction.objectStore('workEntries').get(id));
+      if (!entry || entry.deletedAt || entry.localDate === nextLocalDate) {
+        return { requiresConfirmation: false, affectedDates: [] };
+      }
+      const workDays = transaction.objectStore('workDays');
+      const [sourceDay, destinationDay] = await Promise.all([
+        requestToPromise(workDays.index('localDate').get(entry.localDate)),
+        requestToPromise(workDays.index('localDate').get(nextLocalDate)),
+      ]);
+      const affectedDates = [];
+      if (sourceDay?.state === 'finished' && entryHasSavedAllocation(sourceDay, entry)) affectedDates.push(entry.localDate);
+      if (destinationDay?.state === 'finished' && entry.excludeFromSppr !== true) affectedDates.push(nextLocalDate);
+      return { requiresConfirmation: affectedDates.length > 0, affectedDates };
+    });
   },
 
   async save(input, newAttachments = []) {
@@ -246,6 +322,7 @@ export const workEntryRepository = {
           ...(submissionKey ? { submissionKey } : {}),
           note,
           actualMinutes,
+          excludeFromSppr: existing ? existing.excludeFromSppr === true : task.excludeFromSppr === true,
           source: input.entryType === 'text' ? 'manual' : input.entryType === 'voice' ? 'audio' : 'attachment',
           transcript: input.entryType === 'text' ? null : existing?.transcript ?? null,
           spprDescription: existing?.spprDescription ?? null,
@@ -260,6 +337,12 @@ export const workEntryRepository = {
         const workDays = transaction.objectStore('workDays');
         const dayIndex = workDays.index('localDate');
         const workDay = await requestToPromise(dayIndex.get(input.localDate));
+        const sourceDay = existing && existing.localDate !== input.localDate
+          ? await requestToPromise(dayIndex.get(existing.localDate))
+          : null;
+        const allWorkDays = await requestToPromise(workDays.getAll());
+        const taskLimit = normalizeSpprLimitMinutes(task.maxSpprMinutes);
+        const taskLimitReached = taskLimit !== null && taskLimit - allocatedSpprMinutes(allWorkDays, task.id) < 30;
         if (!workDay) {
           workDays.put({
             id: createId(),
@@ -272,23 +355,30 @@ export const workEntryRepository = {
             targetMinutes: 480,
           });
         } else if (workDay.state === 'finished') {
-          const taskLimit = normalizeSpprLimitMinutes(task.maxSpprMinutes);
-          const allWorkDays = await requestToPromise(workDays.getAll());
-          const taskLimitReached = taskLimit !== null && taskLimit - allocatedSpprMinutes(allWorkDays, task.id) < 30;
-          const keepFinishedResult = existing
-            ? !entryHasSavedAllocation(workDay, existing)
-            : task.excludeFromSppr === true || taskLimitReached;
-          if (!keepFinishedResult) {
-            workDays.put({
-              ...workDay,
-              state: 'active',
-              finishedAt: null,
-              allocationStrategy: null,
-              allocations: [],
-              updatedAt: timestamp,
+          const sameDayAllocatedEdit = existing
+            && existing.localDate === input.localDate
+            && entryHasSavedAllocation(workDay, existing);
+          const addedEligibleEntry = (!existing || existing.localDate !== input.localDate)
+            && entry.excludeFromSppr !== true
+            && !taskLimitReached;
+          if (sameDayAllocatedEdit || addedEligibleEntry) {
+            const currentEntries = (await requestToPromise(entries.index('localDate').getAll(input.localDate)))
+              .filter((item) => !item.deletedAt);
+            reconcileDayAfterEntryMutation(workDays, workDay, currentEntries, {
+              invalidateFinished: true,
+              timestamp,
             });
           }
         }
+        if (sourceDay?.state === 'finished' && entryHasSavedAllocation(sourceDay, existing)) {
+          const remainingSourceEntries = (await requestToPromise(entries.index('localDate').getAll(existing.localDate)))
+            .filter((item) => !item.deletedAt && item.id !== entry.id);
+          reconcileDayAfterEntryMutation(workDays, sourceDay, remainingSourceEntries, {
+            invalidateFinished: true,
+            timestamp,
+          });
+        }
+        await keepSingleStartedDay(workDays, timestamp);
 
         const attachments = transaction.objectStore('audioAttachments');
         const current = await requestToPromise(attachments.index('workEntryId').getAll(entry.id));
@@ -313,24 +403,27 @@ export const workEntryRepository = {
   },
 
   async remove(id) {
-    return runTransaction(['workEntries', 'workDays'], 'readwrite', async (transaction) => {
+    return runTransaction(['workEntries', 'workDays', 'entryRevisions', 'audioAttachments'], 'readwrite', async (transaction) => {
       const store = transaction.objectStore('workEntries');
       const entry = await requestToPromise(store.get(id));
       if (!entry) return;
       const timestamp = now();
-      store.put({ ...entry, deletedAt: timestamp, updatedAt: timestamp });
+      store.delete(entry.id);
+      const revisions = transaction.objectStore('entryRevisions');
+      (await requestToPromise(revisions.index('workEntryId').getAll(entry.id)))
+        .forEach((revision) => revisions.delete(revision.id));
+      const attachments = transaction.objectStore('audioAttachments');
+      (await requestToPromise(attachments.index('workEntryId').getAll(entry.id)))
+        .forEach((attachment) => attachments.delete(attachment.id));
       const workDays = transaction.objectStore('workDays');
       const workDay = await requestToPromise(workDays.index('localDate').get(entry.localDate));
-      if (workDay?.state === 'finished' && entryHasSavedAllocation(workDay, entry)) {
-        workDays.put({
-          ...workDay,
-          state: 'active',
-          finishedAt: null,
-          allocationStrategy: null,
-          allocations: [],
-          updatedAt: timestamp,
-        });
-      }
+      const remainingEntries = (await requestToPromise(store.index('localDate').getAll(entry.localDate)))
+        .filter((item) => !item.deletedAt && item.id !== entry.id);
+      reconcileDayAfterEntryMutation(workDays, workDay, remainingEntries, {
+        invalidateFinished: workDay?.state === 'finished' && entryHasSavedAllocation(workDay, entry),
+        timestamp,
+      });
+      await keepSingleStartedDay(workDays, timestamp);
     });
   },
 
@@ -479,6 +572,15 @@ export const workDayRepository = {
       const store = transaction.objectStore('workDays');
       const existing = await requestToPromise(store.index('localDate').get(localDate));
       if (existing?.state === 'finished') throw new Error('Этот день уже завершён. Откройте результат или внесите новую запись для перерасчёта.');
+      const activeDay = (await requestToPromise(store.getAll())).find((day) =>
+        day.localDate !== localDate && day.state === 'active' && day.startedAt,
+      );
+      if (activeDay) {
+        const error = new Error(`Уже активен рабочий день за ${activeDay.localDate}. Завершите его перед запуском другого.`);
+        error.code = 'ACTIVE_DAY_EXISTS';
+        error.activeLocalDate = activeDay.localDate;
+        throw error;
+      }
       const timestamp = now();
       if (existing) {
         const started = {
@@ -530,6 +632,13 @@ export const workDayRepository = {
         }
       });
       return migrated;
+    });
+  },
+
+  async normalizeMultipleActiveDays() {
+    return runTransaction(['workDays'], 'readwrite', async (transaction) => {
+      const store = transaction.objectStore('workDays');
+      return keepSingleStartedDay(store);
     });
   },
 
